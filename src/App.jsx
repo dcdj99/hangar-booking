@@ -7,6 +7,7 @@ import { fetchBookings } from './store/bookingsSlice';
 
 import HomePage from './pages/HomePage';
 import RoomCalendarPage from './pages/RoomCalendarPage';
+import AboutPage from './pages/AboutPage'; // Import the About page
 
 import LoadingScreen from './components/LoadingScreen';
 
@@ -47,6 +48,7 @@ function App() {
         <Routes>
           <Route exact path="/" element={<HomePage />} />
           <Route path="/room/:roomId/calendar" element={<RoomCalendarPage />} />
+          <Route path="/about" element={<AboutPage />} /> {/* Add the About page route */}
         </Routes>
       </div>
     </Router>
