@@ -89,21 +89,11 @@ const RoomCalendar = ({ room, onBookRoom, onDeleteBooking }) => {
 
   const handleCalendarDayClick = useCallback((day) => {
     if (day.date && dateUtils.isDateBookable(day.date)) {
-      // Format date consistently before passing it up
-      const formattedDate = dateUtils.formatDateForBooking(day.date);
-      console.log('Calendar day clicked:', { 
-        original: day.date, 
-        formatted: formattedDate 
-      });
-      
+      // Only call handleDayClick to update selected date
+      // Don't call onBookRoom here anymore
       handleDayClick(day);
-      
-      // Pass the formatted date string to parent component
-      if (onBookRoom) {
-        onBookRoom(formattedDate);
-      }
     }
-  }, [dateUtils, handleDayClick, onBookRoom]);
+  }, [dateUtils, handleDayClick]);
 
   // Loading and error states
   if (loading || bookingsStatus === 'loading') {
@@ -301,7 +291,7 @@ const SelectedDateView = ({ selectedDate, bookings, isDateBookable, onBookRoom, 
         <button 
           type="button" // Add type="button" to prevent form submission
           className="inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow transition-colors duration-300"
-          onClick={() => onBookRoom(selectedDate)} // Pass the selected date
+          onClick={() => onBookRoom(selectedDate)} // This now explicitly opens the booking form
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />

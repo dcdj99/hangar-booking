@@ -39,6 +39,7 @@ const RoomCalendarPage = () => {
   }, []);
 
   const handleBookRoom = (selectedDay, existingBooking = null) => {
+    // This is now called only when the "Book This Room" button is clicked
     console.log('Opening booking form:', { 
       selectedDay,
       existingBooking,
