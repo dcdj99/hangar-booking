@@ -1,19 +1,13 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, signInAnonymously } from 'firebase/auth';
+import { signInAnonymously } from 'firebase/auth';
 import { auth } from '../firebase/config';
 
-interface AuthContextType {
-  user: User | null;
-  isLoading: boolean;
-  error: Error | null;
-}
+const AuthContext = createContext(undefined);
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     // Subscribe to auth state changes

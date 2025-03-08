@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { version } from '../../package.json';
 
 const Layout = ({ children, title }) => {
   return (
@@ -29,7 +30,7 @@ const Layout = ({ children, title }) => {
       
       <footer className="bg-gray-100 text-gray-600 p-4 border-t border-gray-200">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center">
-          <p className="text-sm">&copy; {new Date().getFullYear()} HANGAR Booking System</p>
+          <p className="text-sm">&copy; {new Date().getFullYear()} HANGAR Booking System <span className="text-xs ml-2">v{version}</span></p>
           <div className="flex items-center space-x-6 mt-2 md:mt-0">
             <Link to="/" className="text-gray-600 hover:text-blue-600 font-medium text-sm hover:underline">Home</Link>
             <Link to="/about" className="text-gray-600 hover:text-blue-600 font-medium text-sm hover:underline">About</Link>

@@ -2,8 +2,10 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { useBooking } from './useBooking';
 import { isTimeSlotAvailable } from '../store/bookingsSlice';
+import { useLocalStorage } from './useLocalStorage';
 
 export const useDateTimeUtils = (room, initialDate, editBooking = null) => {
+  // Fixed utility functions - move outside state dependencies
   const getCurrentDate = useCallback(() => {
     const now = new Date();
     return now.toISOString().split('T')[0];
@@ -16,110 +18,205 @@ export const useDateTimeUtils = (room, initialDate, editBooking = null) => {
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
   }, []);
 
-  const generateTimeSlots = useCallback(() => {
-    const slots = [];
-    // Generate slots from 00:00 to 23:45
-    for (let hour = 0; hour < 24; hour++) {
-      for (let minute = 0; minute < 60; minute += 15) {
-        slots.push(
-          `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
-        );
+  // Combine static utility functions into a single object to avoid recomputation
+  const utils = useMemo(() => ({
+    generateTimeSlots: () => {
+      const slots = [];
+      for (let hour = 0; hour < 24; hour++) {
+        for (let minute = 0; minute < 60; minute += 15) {
+          slots.push(`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
+        }
       }
-    }
-    return slots;
-  }, []);
-
-  const generateEndTimeSlots = useCallback(() => {
-    const slots = [];
-    // Generate slots from 00:00 to 23:45 (include all times, even on the hour)
-    for (let hour = 0; hour < 24; hour++) {
-      for (let minute = 0; minute < 60; minute += 15) {
-        if (hour === 0 && minute === 0) continue; // Skip 00:00 as it's not a valid end time
-        slots.push(
-          `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
-        );
+      return slots;
+    },
+    
+    generateEndTimeSlots: () => {
+      const slots = [];
+      for (let hour = 0; hour < 24; hour++) {
+        for (let minute = 0; minute < 60; minute += 15) {
+          if (hour === 0 && minute === 0) continue;
+          slots.push(`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
+        }
       }
-    }
-    // Add 23:59 as the last possible end time
-    slots.push('23:59');
-    return slots;
-  }, []);
-
-  const dateUtils = useMemo(() => ({
-    isDateInPast: (date) => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      return date < today;
+      slots.push('23:59');
+      return slots;
     },
-    isDateTooFarInFuture: (date) => {
-      const oneMonthFromNow = new Date();
-      oneMonthFromNow.setMonth(oneMonthFromNow.getMonth() + 1);
-      oneMonthFromNow.setHours(0, 0, 0, 0);
-      return date >= oneMonthFromNow;
-    },
-    isDateBookable: (date) => {
-      if (!date) return false;
-      return !dateUtils.isDateInPast(date) && !dateUtils.isDateTooFarInFuture(date);
-    },
-    formatDateForBooking: (date) => {
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    },
-    parseDate: (dateString) => {
-      const [year, month, day] = dateString.split('-').map(Number);
-      return new Date(year, month - 1, day);
-    },
-    isTimeInPast: (time, date) => {
-      const selectedDate = date || getCurrentDate();
-      if (selectedDate !== getCurrentDate()) return false;
+    
+    dateUtils: {
+      isDateInPast: (date) => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return date < today;
+      },
       
-      const [hours, minutes] = time.split(':').map(Number);
-      const [currentHours, currentMinutes] = getCurrentTimeSlot().split(':').map(Number);
+      isDateTooFarInFuture: (date) => {
+        const oneMonthFromNow = new Date();
+        oneMonthFromNow.setMonth(oneMonthFromNow.getMonth() + 1);
+        oneMonthFromNow.setHours(0, 0, 0, 0);
+        return date >= oneMonthFromNow;
+      },
       
-      if (hours < currentHours) return true;
-      if (hours === currentHours && minutes <= currentMinutes) return true;
-      return false;
-    }
-  }), [getCurrentTimeSlot, getCurrentDate]);
-
-  const dateLimits = useMemo(() => ({
-    minDate: getCurrentDate(),
-    maxDate: (() => {
-      const today = new Date();
-      today.setMonth(today.getMonth() + 1);
-      return today.toISOString().split('T')[0];
-    })()
-  }), [getCurrentDate]);
-
-  const timeSlots = useMemo(generateTimeSlots, [generateTimeSlots]);
-  const endTimeSlots = useMemo(generateEndTimeSlots, [generateEndTimeSlots]);
-
-  // Add booking-specific state and logic
-  const bookings = useSelector(state => state.bookings.items);
-  const { createBooking, isSubmitting, error: submitError } = useBooking();
-  const [timeError, setTimeError] = useState('');
+      isDateBookable: (date) => {
+        if (!date) return false;
+        return !utils.dateUtils.isDateInPast(date) && !utils.dateUtils.isDateTooFarInFuture(date);
+      },
+      
+      formatDateForBooking: (date) => {
+        if (!date) return '';
+        
+        // Already formatted as YYYY-MM-DD
+        if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+          return date;
+        }
+        
+        // Convert Date object to YYYY-MM-DD
+        try {
+          const d = date instanceof Date ? date : new Date(date);
+          if (isNaN(d.getTime())) throw new Error('Invalid date');
+          
+          const year = d.getFullYear();
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        } catch (err) {
+          console.error('Date formatting error:', err, date);
+          return '';
+        }
+      },
+      
+      parseDate: (dateString) => {
+        const [year, month, day] = dateString.split('-').map(Number);
+        return new Date(year, month - 1, day);
+      },
+      
+      isTimeInPast: (time, date, getCurrentDate, getCurrentTimeSlot) => {
+        if (date !== getCurrentDate()) return false;
+        const [hours, minutes] = time.split(':').map(Number);
+        const [currentHours, currentMinutes] = getCurrentTimeSlot().split(':').map(Number);
+        if (hours < currentHours) return true;
+        if (hours === currentHours && minutes <= currentMinutes) return true;
+        return false;
+      }
+    },
+    
+    dateLimits: {
+      minDate: getCurrentDate(),
+      maxDate: (() => {
+        const today = new Date();
+        today.setMonth(today.getMonth() + 1);
+        return today.toISOString().split('T')[0];
+      })()
+    },
+    
+    isValidTimeRange: (startTime, endTime) => {
+      // Special case: if end time is midnight (00:00), it's always valid
+      if (endTime === '00:00') return true;
   
-  // Move formData declaration after getAvailableTimes
-  const getAvailableTimes = useCallback((date, startTime) => {
-    // Filter out the booking being edited from availability checks
-    const relevantBookings = bookings.filter(b => 
-      b.date === date && 
-      b.roomId === room?.id && 
-      (!editBooking?.id || b.id !== editBooking.id)
-    ).sort((a, b) => a.startTime.localeCompare(b.startTime));
-
-    const isToday = date === getCurrentDate();
-    const currentTimeSlot = isToday ? getCurrentTimeSlot() : '00:00';
-
-    // Helper to calculate max end time (4 hours after start)
-    const getMaxEndTime = (time) => {
+      const [startHour, startMinute] = startTime.split(':').map(Number);
+      const [endHour, endMinute] = endTime.split(':').map(Number);
+      
+      // Convert to minutes for easier comparison
+      const startMinutes = startHour * 60 + startMinute;
+      const endMinutes = endHour * 60 + endMinute;
+      
+      return endMinutes > startMinutes;
+    },
+    
+    getMaxEndTime: (time) => {
       if (!time) return null;
       const [hours, minutes] = time.split(':').map(Number);
       let newHours = hours + 4;
       return newHours >= 24 ? '23:59' : `${String(newHours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-    };
+    }
+  }), [getCurrentDate, getCurrentTimeSlot]);
+
+  // Combine form-related state into a single object
+  const [formState, setFormState] = useState({
+    data: (() => {
+      // Normalize the date format when initializing
+      const normalizedDate = initialDate 
+        ? utils.dateUtils.formatDateForBooking(initialDate) 
+        : getCurrentDate();
+        
+      console.log('Initializing form with date:', {
+        initialDate,
+        normalized: normalizedDate
+      });
+      
+      if (editBooking) {
+        return {
+          date: editBooking.date,
+          startTime: editBooking.startTime,
+          endTime: editBooking.endTime,
+          name: editBooking.name || '',
+          company: editBooking.company || ''
+        };
+      }
+      return {
+        date: normalizedDate,
+        startTime: '',
+        endTime: '',
+        name: '',
+        company: ''
+      };
+    })(),
+    timeError: ''
+  });
+  
+  // Use local storage for user details
+  const [userName, setUserName] = useLocalStorage('hangar-booking-name', '');
+  const [userCompany, setUserCompany] = useLocalStorage('hangar-booking-company', '');
+  
+  // Apply stored values if not editing
+  useEffect(() => {
+    if (!editBooking) {
+      setFormState(prev => ({
+        ...prev,
+        data: {
+          ...prev.data,
+          name: userName || prev.data.name,
+          company: userCompany || prev.data.company
+        }
+      }));
+    }
+  }, [userName, userCompany, editBooking]);
+
+  // Special effect to handle initialDate changes after component mount
+  useEffect(() => {
+    if (initialDate) {
+      const formattedDate = utils.dateUtils.formatDateForBooking(initialDate);
+      
+      if (formattedDate !== formState.data.date) {
+        console.log('Updating form date to match initialDate:', {
+          initialDate,
+          formattedDate,
+          currentFormDate: formState.data.date
+        });
+        
+        setFormState(prev => ({
+          ...prev,
+          data: {
+            ...prev.data,
+            date: formattedDate
+          }
+        }));
+      }
+    }
+  }, [initialDate, utils.dateUtils, formState.data.date]);
+
+  const bookings = useSelector(state => state.bookings.items);
+  const { createBooking, isSubmitting, error: submitError } = useBooking();
+  
+  // Calculate available times based on current bookings and form state
+  const availableTimes = useMemo(() => {
+    const relevantBookings = bookings.filter(b => 
+      b.date === formState.data.date && 
+      b.roomId === room?.id && 
+      (!editBooking?.id || b.id !== editBooking.id)
+    ).sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+    const isToday = formState.data.date === getCurrentDate();
+    const currentTimeSlot = isToday ? getCurrentTimeSlot() : '00:00';
 
     // Find next available booking after the given time
     const getNextBookingStart = (afterTime) => {
@@ -127,152 +224,127 @@ export const useDateTimeUtils = (room, initialDate, editBooking = null) => {
       return nextBooking ? nextBooking.startTime : '23:59';
     };
 
-    return {
-      availableStartTimes: timeSlots
-        .filter(time => {
-          if (isToday && time < currentTimeSlot) return false;
-          
-          // When editing, always allow the original start time
-          if (editBooking && time === editBooking.startTime) return true;
-          
-          // Can't start during another booking
-          return !relevantBookings.some(b => 
-            time >= b.startTime && time < b.endTime
-          );
-        }),
-      availableEndTimes: endTimeSlots
-        .filter(time => {
-         
-          if (time <= startTime) return false;
-          
-          // Check 4-hour limit
-          const maxEndTime = getMaxEndTime(startTime);
-          if (time > maxEndTime) return false;
-          
+    // Generate available start times
+    const availableStartTimes = utils.generateTimeSlots().filter(time => {
+      if (isToday && time < currentTimeSlot) return false;
+      
+      // When editing, always allow the original start time
+      if (editBooking && time === editBooking.startTime) return true;
+      
+      // Can't start during another booking
+      return !relevantBookings.some(b => time >= b.startTime && time < b.endTime);
+    });
 
-          // When editing, always allow the original end time
-          if (editBooking && time === editBooking.endTime && startTime === editBooking.startTime) return true;
-          
-          // Find next booking's start time
-          const nextBookingStart = getNextBookingStart(startTime);
-          
-          // Allow booking until the start of next booking (inclusive)
-          if (time > nextBookingStart) return false;
-          
-       
-          // For overlapping check, exclude times that fall within existing bookings
-          // but specifically allow booking to end exactly at the start time of another booking
-          for (const booking of relevantBookings) {
-            // Inside another booking's time range (but not at its exact start)
-            if (time > booking.startTime && time < booking.endTime) {
-            
-              return false;
-            }
-            
-            // If this time equals a booking's start time but is NOT the very next booking,
-            // then don't allow it (prevents creating gaps)
-            if (time === booking.startTime && booking.startTime !== nextBookingStart) {   
-             
-              return false;
-            }
-          }
-          
-          return true;
-        })
-    };
-  }, [bookings, timeSlots, endTimeSlots, getCurrentDate, getCurrentTimeSlot, room, editBooking]);
-
-  // Calculate available times first
-  const { availableStartTimes: initialAvailableStartTimes } = useMemo(() => {
-    const currentTime = getCurrentTimeSlot();
-    return getAvailableTimes(initialDate || getCurrentDate(), currentTime);
-  }, [getAvailableTimes, getCurrentDate, getCurrentTimeSlot, initialDate]);
-
-  // Now we can initialize formData with the calculated available times
-  const [formData, setFormData] = useState(() => {
-    if (editBooking) {
-      // When editing, use the existing booking data
-      return {
-        date: editBooking.date,
-        startTime: editBooking.startTime,
-        endTime: editBooking.endTime,
-        name: editBooking.name,
-        company: editBooking.company
-      };
-    }
-    // For new bookings, use the default initialization
-    return {
-      date: initialDate || getCurrentDate(),
-      startTime: initialDate ? initialAvailableStartTimes[0] || '' : '',
-      endTime: '',
-      name: '',
-      company: ''
-    };
-  });
-
-  // Update available times based on form data changes
-  const { availableStartTimes: currentAvailableStartTimes, availableEndTimes: currentAvailableEndTimes } = useMemo(() => 
-    getAvailableTimes(formData.date, formData.startTime),
-    [formData.date, formData.startTime, getAvailableTimes]
-  );
-
-  // Define isValidTimeRange with useCallback to maintain reference stability
-  const isValidTimeRange = useCallback((startTime, endTime) => {
-    // Special case: if end time is midnight (00:00), it's always valid
-    if (endTime === '00:00') return true;
-
-    const [startHour, startMinute] = startTime.split(':').map(Number);
-    const [endHour, endMinute] = endTime.split(':').map(Number);
-    
-    // Convert to minutes for easier comparison
-    const startMinutes = startHour * 60 + startMinute;
-    const endMinutes = endHour * 60 + endMinute;
-    
-    return endMinutes > startMinutes;
-  }, []);
-
-  // When formData.startTime changes, set a default endTime
-  useEffect(() => {
-    if (formData.startTime && currentAvailableEndTimes.length > 0) {
-      // Start time has changed, we need to check if end time is still valid
-      if (formData.endTime) {
-        // Check if the current end time is still valid after changing start time
-        const isCurrentEndTimeValid = currentAvailableEndTimes.includes(formData.endTime) && 
-                                      isValidTimeRange(formData.startTime, formData.endTime);
-        
-        if (!isCurrentEndTimeValid) {
-          // End time is no longer valid, pick a new one
-          setFormData(prev => ({
-            ...prev,
-            endTime: currentAvailableEndTimes[0]
-          }));
+    // Generate available end times if a start time is selected
+    const availableEndTimes = formState.data.startTime ? utils.generateEndTimeSlots().filter(time => {
+      if (time <= formState.data.startTime) return false;
+      
+      // Check 4-hour limit
+      const maxEndTime = utils.getMaxEndTime(formState.data.startTime);
+      if (time > maxEndTime) return false;
+      
+      // When editing, allow the original end time
+      if (editBooking && time === editBooking.endTime && formState.data.startTime === editBooking.startTime) {
+        return true;
+      }
+      
+      // Find next booking's start time
+      const nextBookingStart = getNextBookingStart(formState.data.startTime);
+      
+      // Can't end after the next booking starts
+      if (time > nextBookingStart) return false;
+      
+      // Check for overlaps with existing bookings
+      for (const booking of relevantBookings) {
+        // Inside another booking's time range (but not at its exact start)
+        if (time > booking.startTime && time < booking.endTime) {
+          return false;
         }
-      } else {
-        // No end time set yet, pick the first available one
-        setFormData(prev => ({
+        
+        // If this time equals a booking's start time but is NOT the very next booking,
+        // then don't allow it (prevents creating gaps)
+        if (time === booking.startTime && booking.startTime !== nextBookingStart) {
+          return false;
+        }
+      }
+      
+      return true;
+    }) : [];
+
+    return { availableStartTimes, availableEndTimes };
+  }, [bookings, formState.data.date, formState.data.startTime, getCurrentDate, getCurrentTimeSlot, room, editBooking, utils]);
+
+  // Update end time when start time changes
+  useEffect(() => {
+    if (formState.data.startTime && availableTimes.availableEndTimes.length > 0) {
+      const currentEndTime = formState.data.endTime;
+      
+      // Check if the current end time is still valid
+      const isCurrentEndTimeValid = currentEndTime && 
+        availableTimes.availableEndTimes.includes(currentEndTime) && 
+        utils.isValidTimeRange(formState.data.startTime, currentEndTime);
+      
+      if (!isCurrentEndTimeValid) {
+        // Set to first available end time if current one is invalid
+        setFormState(prev => ({
           ...prev,
-          endTime: currentAvailableEndTimes[0]
+          data: {
+            ...prev.data,
+            endTime: availableTimes.availableEndTimes[0] || ''
+          }
         }));
       }
     }
-  }, [formData.startTime, currentAvailableEndTimes, formData.endTime, isValidTimeRange]);
+  }, [formState.data.startTime, availableTimes.availableEndTimes, formState.data.endTime, utils]);
 
+  // Simplified form change handler
+  const setFormData = useCallback((newData) => {
+    if (typeof newData === 'function') {
+      setFormState(prev => ({
+        ...prev,
+        data: typeof newData === 'function' ? newData(prev.data) : { ...prev.data, ...newData }
+      }));
+    } else {
+      setFormState(prev => ({
+        ...prev,
+        data: { ...prev.data, ...newData }
+      }));
+    }
+  }, []);
+
+  // Simplified error handling
+  const setTimeError = useCallback((error) => {
+    setFormState(prev => ({ ...prev, timeError: error }));
+  }, []);
+
+  // Form submission handling
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // Validate required fields
-    if (!formData.startTime || !formData.endTime) {
-      setTimeError('Both start time and end time are required');
+    // Validate form data
+    if (!formState.data.startTime) {
+      setTimeError('Please select a start time');
       return null;
     }
 
-    if (!isValidTimeRange(formData.startTime, formData.endTime)) {
+    if (!formState.data.endTime) {
+      if (availableTimes.availableEndTimes.length > 0) {
+        setTimeError('Please select an end time');
+      } else {
+        setTimeError('No available end times for this start time');
+      }
+      return null;
+    }
+
+    setTimeError('');
+
+    if (!utils.isValidTimeRange(formState.data.startTime, formState.data.endTime)) {
       setTimeError('End time must be after start time');
       return null;
     }
 
     if (!isTimeSlotAvailable(bookings, {
-      ...formData,
+      ...formState.data,
       roomId: room?.id
     })) {
       setTimeError('This time slot is no longer available');
@@ -280,19 +352,21 @@ export const useDateTimeUtils = (room, initialDate, editBooking = null) => {
     }
 
     try {
+      // Store user details
+      setUserName(formState.data.name);
+      setUserCompany(formState.data.company);
+
       const bookingId = await createBooking({
-        ...formData,
+        ...formState.data,
         roomId: room?.id
       });
 
       if (bookingId) {
-        // Return complete booking object with ID
-        const completeBooking = {
+        return {
           id: bookingId,
-          ...formData,
+          ...formState.data,
           roomId: room?.id,
         };
-        return completeBooking;
       }
       return null;
     } catch (err) {
@@ -301,23 +375,36 @@ export const useDateTimeUtils = (room, initialDate, editBooking = null) => {
     }
   };
 
+  // Handle booking edits
   const handleEdit = async (e) => {
     e.preventDefault();
     
-    if (!formData.startTime || !formData.endTime) {
-      setTimeError('Both start time and end time are required');
+    // Similar validation as for creating
+    if (!formState.data.startTime) {
+      setTimeError('Please select a start time');
       return null;
     }
 
-    if (!isValidTimeRange(formData.startTime, formData.endTime)) {
+    if (!formState.data.endTime) {
+      if (availableTimes.availableEndTimes.length > 0) {
+        setTimeError('Please select an end time');
+      } else {
+        setTimeError('No available end times for this start time');
+      }
+      return null;
+    }
+    
+    setTimeError('');
+
+    if (!utils.isValidTimeRange(formState.data.startTime, formState.data.endTime)) {
       setTimeError('End time must be after start time');
       return null;
     }
 
-    // Check if slot is available (excluding current booking)
+    // Check availability excluding current booking
     const otherBookings = bookings.filter(b => b.id !== editBooking.id);
     if (!isTimeSlotAvailable(otherBookings, {
-      ...formData,
+      ...formState.data,
       roomId: room?.id
     })) {
       setTimeError('This time slot is no longer available');
@@ -329,14 +416,18 @@ export const useDateTimeUtils = (room, initialDate, editBooking = null) => {
         throw new Error('Edit function not provided');
       }
 
+      // Store user details
+      setUserName(formState.data.name);
+      setUserCompany(formState.data.company);
+
       await editBooking.onEdit(editBooking.id, {
-        ...formData,
+        ...formState.data,
         roomId: room?.id
       });
 
       return {
         id: editBooking.id,
-        ...formData,
+        ...formState.data,
         roomId: room?.id,
       };
     } catch (err) {
@@ -348,18 +439,17 @@ export const useDateTimeUtils = (room, initialDate, editBooking = null) => {
   return {
     getCurrentDate,
     getCurrentTimeSlot,
-    generateTimeSlots,
-    dateUtils,
-    dateLimits,
-    timeSlots,
-    formData,
+    dateUtils: utils.dateUtils,
+    dateLimits: utils.dateLimits,
+    timeSlots: utils.generateTimeSlots(),
+    formData: formState.data,
     setFormData,
-    timeError,
+    timeError: formState.timeError,
     setTimeError,
     isSubmitting,
     submitError,
-    availableStartTimes: currentAvailableStartTimes,
-    availableEndTimes: currentAvailableEndTimes,
+    availableStartTimes: availableTimes.availableStartTimes,
+    availableEndTimes: availableTimes.availableEndTimes,
     handleSubmit,
     handleEdit
   };

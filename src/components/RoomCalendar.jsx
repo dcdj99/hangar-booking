@@ -87,6 +87,24 @@ const RoomCalendar = ({ room, onBookRoom, onDeleteBooking }) => {
     return days;
   }, [dateUtils, hasBookingsForDate]);
 
+  const handleCalendarDayClick = useCallback((day) => {
+    if (day.date && dateUtils.isDateBookable(day.date)) {
+      // Format date consistently before passing it up
+      const formattedDate = dateUtils.formatDateForBooking(day.date);
+      console.log('Calendar day clicked:', { 
+        original: day.date, 
+        formatted: formattedDate 
+      });
+      
+      handleDayClick(day);
+      
+      // Pass the formatted date string to parent component
+      if (onBookRoom) {
+        onBookRoom(formattedDate);
+      }
+    }
+  }, [dateUtils, handleDayClick, onBookRoom]);
+
   // Loading and error states
   if (loading || bookingsStatus === 'loading') {
     return <LoadingState />;
@@ -114,7 +132,7 @@ const RoomCalendar = ({ room, onBookRoom, onDeleteBooking }) => {
         <CalendarGrid 
           calendarDays={calendarDays}
           selectedDate={selectedDate}
-          onDayClick={handleDayClick}
+          onDayClick={handleCalendarDayClick}
         />
       </div>
       
@@ -191,7 +209,11 @@ const CalendarGrid = ({ calendarDays, selectedDate, onDayClick }) => (
           text-center py-3 rounded-lg transition-all duration-200 relative
           ${day.isCurrentMonth ? (day.isBookable ? 'hover:bg-blue-50 cursor-pointer' : 'cursor-not-allowed bg-gray-50') : 'text-gray-400'}
           ${day.isCurrentMonth ? 'text-gray-800' : 'text-gray-400'}
-          ${day.date && selectedDate && day.date.toDateString() === selectedDate.toDateString() 
+          ${day.date && selectedDate && (
+              selectedDate instanceof Date 
+                ? day.date.toDateString() === selectedDate.toDateString()
+                : day.date.toISOString().split('T')[0] === selectedDate
+            )
             ? 'bg-blue-500 text-white hover:bg-blue-600' : ''}
           ${day.hasBookings && day.isCurrentMonth ? 'font-semibold' : ''}
           ${!day.isBookable && day.isCurrentMonth ? 'text-gray-400' : ''}

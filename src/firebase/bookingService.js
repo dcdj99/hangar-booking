@@ -1,22 +1,10 @@
-import { collection, addDoc, query, where, getDocs, Timestamp, CollectionReference, Query, QueryFieldFilterConstraint, DocumentData, doc, updateDoc, getDoc, deleteDoc } from 'firebase/firestore';
+import { collection, addDoc, query, where, getDocs, Timestamp, doc, updateDoc, getDoc, deleteDoc } from 'firebase/firestore';
 import { db } from './config';
 
 export const BOOKINGS_COLLECTION = 'bookings';
 
-export interface Booking {
-  id?: string;
-  roomId: number;
-  userId: string;
-  date: string;
-  startTime: string;
-  endTime: string;
-  name: string;
-  company: string;
-  createdAt?: Date;
-}
-
 // Shared helper function now exported
-export const serializeFirestoreData = (doc: any) => {
+export const serializeFirestoreData = (doc) => {
   const data = doc instanceof Object ? (doc.data ? doc.data() : doc) : doc;
   return Object.entries(data).reduce((acc, [key, value]) => {
     if (value instanceof Timestamp) {
@@ -25,32 +13,49 @@ export const serializeFirestoreData = (doc: any) => {
       acc[key] = value;
     }
     return acc;
-  }, {} as Record<string, any>);
+  }, {});
 };
 
-export const createBooking = async (booking: Booking, userId: string): Promise<string> => {
+export const createBooking = async (booking, userId) => {
   try {
     if (!userId) {
       throw new Error('User is not authenticated');
     }
 
-    // Check if booking already exists first
+    // Check if booking already exists first - improved duplicate detection
     const bookingsRef = collection(db, BOOKINGS_COLLECTION);
+    
+    // Ensure we're using exact matches with proper data types
+    const roomId = typeof booking.roomId === 'string' ? parseInt(booking.roomId, 10) : booking.roomId;
+    
     const q = query(bookingsRef, 
-      where('roomId', '==', booking.roomId),
+      where('roomId', '==', roomId),
       where('date', '==', booking.date),
       where('startTime', '==', booking.startTime),
       where('endTime', '==', booking.endTime)
     );
     
     const existingBookings = await getDocs(q);
+    
+    // Only throw if there's an actual conflict (not our own new booking)
     if (!existingBookings.empty) {
-      throw new Error('This booking already exists');
+      // Check if it's not our own booking (e.g., when retrying a submission)
+      const conflictingBooking = existingBookings.docs[0].data();
+      if (conflictingBooking.userId === userId && 
+          conflictingBooking.name === booking.name && 
+          conflictingBooking.company === booking.company) {
+        // It's likely a duplicate submission of the same booking
+        console.log('Duplicate submission detected, returning existing booking ID');
+        return existingBookings.docs[0].id;
+      } else {
+        throw new Error('This booking already exists');
+      }
     }
 
     // If no duplicate, create the booking
     const docRef = await addDoc(collection(db, BOOKINGS_COLLECTION), {
       ...booking,
+      roomId: roomId, // Ensure consistent type
       createdAt: Timestamp.now(),
       userId: userId
     });
@@ -61,14 +66,10 @@ export const createBooking = async (booking: Booking, userId: string): Promise<s
   }
 };
 
-export const getBookings = async (params: {
-  roomId?: number;
-  startDate?: string;
-  endDate?: string;
-}): Promise<Booking[]> => {
+export const getBookings = async (params) => {
   try {
     const bookingsCollection = collection(db, BOOKINGS_COLLECTION);
-    const conditions: QueryFieldFilterConstraint[] = [];
+    const conditions = [];
 
     if (params.roomId) {
       conditions.push(where('roomId', '==', params.roomId));
@@ -90,14 +91,14 @@ export const getBookings = async (params: {
     return querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...serializeFirestoreData(doc)
-    })) as Booking[];
+    }));
   } catch (error) {
     console.error('Error fetching bookings:', error);
     throw error;
   }
 };
 
-export const updateBooking = async (bookingId: string, updates: Partial<Booking>, userId: string): Promise<void> => {
+export const updateBooking = async (bookingId, updates, userId) => {
   try {
     if (!userId) {
       throw new Error('User is not authenticated');
@@ -114,7 +115,7 @@ export const updateBooking = async (bookingId: string, updates: Partial<Booking>
   }
 };
 
-export const deleteBooking = async (bookingId: string, userId: string): Promise<void> => {
+export const deleteBooking = async (bookingId, userId) => {
   try {
     if (!userId) {
       throw new Error('User is not authenticated');

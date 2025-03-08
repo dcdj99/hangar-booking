@@ -31,34 +31,35 @@ const bookingsSlice = createSlice({
     error: null
   },
   reducers: {
-    bookingReceived: (state, action) => {
-      const { type, booking } = action.payload;
-      let index;
-      
-      switch (type) {
-        case 'added':
-          // Check for duplicates before adding
-          if (!state.items.some(b => (
-            b.roomId === booking.roomId &&
-            b.date === booking.date &&
-            b.startTime === booking.startTime &&
-            b.endTime === booking.endTime
-          ))) {
-            state.items.push(booking);
-          }
-          break;
-        
-        case 'modified':
-          index = state.items.findIndex(b => b.id === booking.id);
-          if (index !== -1) {
-            state.items[index] = booking;
-          }
-          break;
-        
-        case 'removed':
-          state.items = state.items.filter(b => b.id !== booking.id);
-          break;
+    bookingsLoading(state) {
+      if (state.status === 'idle') {
+        state.status = 'loading';
       }
+    },
+    bookingsLoaded(state, action) {
+      if (state.status === 'loading') {
+        state.items = action.payload;
+        state.status = 'succeeded';
+      }
+    },
+    bookingReceived(state, action) {
+      // Make sure we don't add duplicates
+      if (!state.items.find(booking => booking.id === action.payload.id)) {
+        state.items.push(action.payload);
+      }
+    },
+    bookingUpdated(state, action) {
+      const index = state.items.findIndex(booking => booking.id === action.payload.id);
+      if (index !== -1) {
+        state.items[index] = action.payload;
+      }
+    },
+    bookingRemoved(state, action) {
+      state.items = state.items.filter(booking => booking.id !== action.payload);
+    },
+    bookingsError(state, action) {
+      state.status = 'failed';
+      state.error = action.payload;
     },
     addBooking: (state, action) => {
       const newBooking = action.payload;
@@ -89,5 +90,15 @@ const bookingsSlice = createSlice({
   }
 });
 
-export const { bookingReceived, addBooking, removeBooking } = bookingsSlice.actions;
+export const { 
+  bookingsLoading, 
+  bookingsLoaded, 
+  bookingReceived, 
+  bookingUpdated, 
+  bookingRemoved, 
+  bookingsError, 
+  addBooking, 
+  removeBooking 
+} = bookingsSlice.actions;
+
 export default bookingsSlice.reducer;

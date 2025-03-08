@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useDateTimeUtils } from '../hooks/useDateTimeUtils';
 
 const BookingForm = ({ room, initialDate, onSubmit, onCancel, editBooking }) => {
@@ -15,10 +15,55 @@ const BookingForm = ({ room, initialDate, onSubmit, onCancel, editBooking }) => 
     isSubmitting
   } = useDateTimeUtils(room, initialDate, editBooking);
 
+  // Force update the form date when initialDate prop changes
+  useEffect(() => {
+    if (initialDate) {
+      setFormData(prev => ({
+        ...prev,
+        date: initialDate
+      }));
+    }
+  }, [initialDate, setFormData]);
+
+  // Preserve user data in local storage
+  useEffect(() => {
+    const savedFormData = localStorage.getItem('formData');
+    if (savedFormData && !initialDate && !editBooking) {
+      const parsedData = JSON.parse(savedFormData);
+      setFormData(prevData => ({
+        ...prevData,
+        name: parsedData.name || prevData.name,
+        company: parsedData.company || prevData.company,
+      }));
+    }
+  }, [setFormData, initialDate, editBooking]);
+
+  useEffect(() => {
+    localStorage.setItem('formData', JSON.stringify({
+      name: formData.name,
+      company: formData.company
+    }));
+  }, [formData.name, formData.company]);
+
+  // When the component mounts, if there's a start time but no end time,
+  // and if there are available end times, set the first available end time
+  useEffect(() => {
+    if (formData.startTime && !formData.endTime && availableEndTimes.length > 0) {
+      setFormData(prev => ({
+        ...prev,
+        endTime: availableEndTimes[0]
+      }));
+    }
+  }, [formData.startTime, formData.endTime, availableEndTimes, setFormData]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     
     // First validate that start time is before end time
+    if (!formData.startTime || !formData.endTime) {
+      return; // Don't proceed if times are not selected
+    }
+    
     const [startHour, startMinute] = formData.startTime.split(':').map(Number);
     const [endHour, endMinute] = formData.endTime.split(':').map(Number);
     
@@ -36,11 +81,13 @@ const BookingForm = ({ room, initialDate, onSubmit, onCancel, editBooking }) => 
       : handleSubmitBooking(e));
     
     if (result) {
+      console.log('Form submission result:', result); // Add debug logging
       onSubmit(result); // Pass the result, not formData
     }
   };
 
   const handleDateChange = (e) => {
+    console.log('Date changed to:', e.target.value); // Add debug logging
     setFormData(prev => ({ ...prev, date: e.target.value }));
   };
 
@@ -54,10 +101,13 @@ const BookingForm = ({ room, initialDate, onSubmit, onCancel, editBooking }) => 
           onChange={handleDateChange}
           min={dateLimits.minDate}
           max={dateLimits.maxDate}
-          disabled={!!initialDate} // Only disable if initialDate is provided
           className={`w-full p-2 border rounded ${initialDate ? 'bg-gray-50' : 'bg-white'}`}
           required
         />
+        {/* Debug information - remove in production */}
+        <div className="text-xs text-gray-500 mt-1">
+          Selected date: {formData.date} (Initial: {initialDate || 'none'})
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -67,7 +117,9 @@ const BookingForm = ({ room, initialDate, onSubmit, onCancel, editBooking }) => 
             value={formData.startTime}
             onChange={(e) => setFormData(prev => ({ ...prev, startTime: e.target.value }))}
             className="w-full p-2 border rounded"
+            required
           >
+            <option value="">Select start time</option>
             {timeSlots
               .filter(time => {
                 // Show only available times and the current time when editing
@@ -92,11 +144,16 @@ const BookingForm = ({ room, initialDate, onSubmit, onCancel, editBooking }) => 
             value={formData.endTime}
             onChange={(e) => setFormData(prev => ({ ...prev, endTime: e.target.value }))}
             className="w-full p-2 border rounded"
-            disabled={availableEndTimes.length === 0}
+            disabled={availableEndTimes.length === 0 || !formData.startTime}
+            required
           >
-            {availableEndTimes.map(time => (
-              <option key={time} value={time}>{time}</option>
-            ))}
+            {availableEndTimes.length > 0 ? (
+              availableEndTimes.map(time => (
+                <option key={time} value={time}>{time}</option>
+              ))
+            ) : (
+              <option value="">Select start time first</option>
+            )}
           </select>
         </div>
       </div>
@@ -151,7 +208,7 @@ const BookingForm = ({ room, initialDate, onSubmit, onCancel, editBooking }) => 
         <button
           type="submit"
           className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-          disabled={availableEndTimes.length === 0 || isSubmitting}
+          disabled={!formData.startTime || !formData.endTime || availableEndTimes.length === 0 || isSubmitting}
         >
           {isSubmitting ? 'Processing...' : (editBooking ? 'Update Booking' : 'Book Room')}
         </button>

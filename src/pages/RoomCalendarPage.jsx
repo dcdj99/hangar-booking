@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import RoomCalendar from '../components/RoomCalendar';
@@ -23,8 +23,27 @@ const RoomCalendarPage = () => {
   const numericRoomId = parseInt(roomId, 10);
   const room = rooms.find(r => r.id === numericRoomId);
 
+  // Ensure consistent date formatting
+  const formatDateForBooking = useCallback((date) => {
+    if (!date) return null;
+    
+    // Handle both Date objects and string dates
+    if (date instanceof Date) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+    
+    return date; // If already formatted, return as is
+  }, []);
+
   const handleBookRoom = (selectedDay, existingBooking = null) => {
-    console.log('Opening booking form:', { selectedDay, existingBooking });
+    console.log('Opening booking form:', { 
+      selectedDay,
+      existingBooking,
+      type: selectedDay instanceof Date ? 'Date object' : typeof selectedDay
+    });
     
     if (existingBooking) {
       setEditingBooking({
@@ -34,7 +53,8 @@ const RoomCalendarPage = () => {
       setSelectedDate(existingBooking.date);
     } else {
       setEditingBooking(null);
-      const formattedDate = dateUtils.formatDateForBooking(selectedDay);
+      const formattedDate = formatDateForBooking(selectedDay);
+      console.log('Formatted date for form:', formattedDate); // Debug
       setSelectedDate(formattedDate);
     }
     setIsModalOpen(true);
